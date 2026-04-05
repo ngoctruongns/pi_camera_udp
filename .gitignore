@@ -1,0 +1,23 @@
+/.vscode/
+
+# CMake build outputs
+/pi/build/
+/pi/CMakeFiles/
+/pi/CMakeCache.txt
+/pi/Makefile
+/pi/cmake_install.cmake
+/pi/compile_commands.json
+
+# Colcon / ROS2 local outputs if created inside this repo
+/build/
+/install/
+/log/
+
+# Common editor / tool artifacts
+*.user
+*.swp
+*.swo
+*.tmp
+*.log
+.cache/
+.DS_Store
