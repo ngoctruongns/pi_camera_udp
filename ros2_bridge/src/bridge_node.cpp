@@ -19,22 +19,19 @@
 class PiCameraBridgeNode : public rclcpp::Node
 {
 public:
-    PiCameraBridgeNode()
-    : Node("pi_camera_udp_bridge")
+    PiCameraBridgeNode() : Node("pi_camera_udp_bridge")
     {
         gst_init(nullptr, nullptr);
 
         const int udp_port = declare_parameter<int>("udp_port", 5000);
         frame_id_ = declare_parameter<std::string>("frame_id", "pi_camera_optical_frame");
-        receiver_pipeline_ = declare_parameter<std::string>(
-            "receiver_pipeline",
-            default_pipeline(udp_port));
+        receiver_pipeline_ =
+            declare_parameter<std::string>("receiver_pipeline", default_pipeline(udp_port));
 
         image_pub_ = create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10);
         camera_info_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("camera/camera_info", 10);
 
-        if (!start_pipeline())
-        {
+        if (!start_pipeline()) {
             throw std::runtime_error("Failed to initialize GStreamer receiver pipeline");
         }
 
@@ -46,8 +43,7 @@ public:
     ~PiCameraBridgeNode() override
     {
         running_.store(false);
-        if (worker_.joinable())
-        {
+        if (worker_.joinable()) {
             worker_.join();
         }
 
@@ -57,25 +53,21 @@ public:
 private:
     void stop_and_cleanup_pipeline()
     {
-        if (pipeline_ != nullptr)
-        {
+        if (pipeline_ != nullptr) {
             gst_element_set_state(pipeline_, GST_STATE_NULL);
         }
 
-        if (appsink_ != nullptr)
-        {
+        if (appsink_ != nullptr) {
             gst_object_unref(appsink_);
             appsink_ = nullptr;
         }
 
-        if (bus_ != nullptr)
-        {
+        if (bus_ != nullptr) {
             gst_object_unref(bus_);
             bus_ = nullptr;
         }
 
-        if (pipeline_ != nullptr)
-        {
+        if (pipeline_ != nullptr) {
             gst_object_unref(pipeline_);
             pipeline_ = nullptr;
         }
@@ -84,19 +76,18 @@ private:
     static std::string default_pipeline(int udp_port)
     {
         return "udpsrc port=" + std::to_string(udp_port) +
-               " caps=\"application/x-rtp, media=video, encoding-name=H264, payload=96, clock-rate=90000\" ! "
+               " caps=\"application/x-rtp, media=video, encoding-name=H264, payload=96, "
+               "clock-rate=90000\" ! "
                "rtph264depay ! avdec_h264 ! videoconvert ! video/x-raw,format=BGR ! "
                "appsink name=video_sink sync=false max-buffers=1 drop=true";
     }
 
     bool start_pipeline()
     {
-        GError* error = nullptr;
+        GError *error = nullptr;
         pipeline_ = gst_parse_launch(receiver_pipeline_.c_str(), &error);
-        if (pipeline_ == nullptr)
-        {
-            if (error != nullptr)
-            {
+        if (pipeline_ == nullptr) {
+            if (error != nullptr) {
                 RCLCPP_ERROR(get_logger(), "Failed to parse receiver pipeline: %s", error->message);
                 g_error_free(error);
             }
@@ -104,9 +95,9 @@ private:
         }
 
         appsink_ = GST_APP_SINK(gst_bin_get_by_name(GST_BIN(pipeline_), "video_sink"));
-        if (appsink_ == nullptr)
-        {
-            RCLCPP_ERROR(get_logger(), "Receiver pipeline does not contain appsink named video_sink");
+        if (appsink_ == nullptr) {
+            RCLCPP_ERROR(get_logger(),
+                         "Receiver pipeline does not contain appsink named video_sink");
             stop_and_cleanup_pipeline();
             return false;
         }
@@ -116,16 +107,14 @@ private:
         gst_app_sink_set_max_buffers(appsink_, 1);
 
         bus_ = gst_element_get_bus(pipeline_);
-        if (bus_ == nullptr)
-        {
+        if (bus_ == nullptr) {
             RCLCPP_ERROR(get_logger(), "Failed to get GStreamer bus from receiver pipeline");
             stop_and_cleanup_pipeline();
             return false;
         }
 
         const GstStateChangeReturn result = gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-        if (result == GST_STATE_CHANGE_FAILURE)
-        {
+        if (result == GST_STATE_CHANGE_FAILURE) {
             RCLCPP_ERROR(get_logger(), "Failed to set receiver pipeline to PLAYING");
             stop_and_cleanup_pipeline();
             return false;
@@ -136,34 +125,26 @@ private:
 
     void drain_bus()
     {
-        if (bus_ == nullptr)
-        {
+        if (bus_ == nullptr) {
             return;
         }
 
-        while (true)
-        {
-            GstMessage* message = gst_bus_pop_filtered(
-                bus_,
-                static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS | GST_MESSAGE_WARNING));
-            if (message == nullptr)
-            {
+        while (true) {
+            GstMessage *message = gst_bus_pop_filtered(
+                bus_, static_cast<GstMessageType>(GST_MESSAGE_ERROR | GST_MESSAGE_EOS |
+                                                  GST_MESSAGE_WARNING));
+            if (message == nullptr) {
                 break;
             }
 
-            switch (GST_MESSAGE_TYPE(message))
-            {
-                case GST_MESSAGE_ERROR:
-                {
-                    GError* error = nullptr;
-                    gchar* debug = nullptr;
+            switch (GST_MESSAGE_TYPE(message)) {
+                case GST_MESSAGE_ERROR: {
+                    GError *error = nullptr;
+                    gchar *debug = nullptr;
                     gst_message_parse_error(message, &error, &debug);
-                    RCLCPP_ERROR(
-                        get_logger(),
-                        "GStreamer receiver error: %s",
-                        error != nullptr ? error->message : "unknown");
-                    if (error != nullptr)
-                    {
+                    RCLCPP_ERROR(get_logger(), "GStreamer receiver error: %s",
+                                 error != nullptr ? error->message : "unknown");
+                    if (error != nullptr) {
                         g_error_free(error);
                     }
                     g_free(debug);
@@ -174,17 +155,13 @@ private:
                     RCLCPP_WARN(get_logger(), "Receiver pipeline reached EOS");
                     running_.store(false);
                     break;
-                case GST_MESSAGE_WARNING:
-                {
-                    GError* error = nullptr;
-                    gchar* debug = nullptr;
+                case GST_MESSAGE_WARNING: {
+                    GError *error = nullptr;
+                    gchar *debug = nullptr;
                     gst_message_parse_warning(message, &error, &debug);
-                    RCLCPP_WARN(
-                        get_logger(),
-                        "GStreamer receiver warning: %s",
-                        error != nullptr ? error->message : "unknown");
-                    if (error != nullptr)
-                    {
+                    RCLCPP_WARN(get_logger(), "GStreamer receiver warning: %s",
+                                error != nullptr ? error->message : "unknown");
+                    if (error != nullptr) {
                         g_error_free(error);
                     }
                     g_free(debug);
@@ -198,57 +175,55 @@ private:
         }
     }
 
-    void publish_sample(GstSample* sample)
+    void publish_sample(GstSample *sample)
     {
-        GstCaps* caps = gst_sample_get_caps(sample);
-        if (caps == nullptr)
-        {
+        GstCaps *caps = gst_sample_get_caps(sample);
+        if (caps == nullptr) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Received sample without caps");
             return;
         }
 
-        GstStructure* structure = gst_caps_get_structure(caps, 0);
+        GstStructure *structure = gst_caps_get_structure(caps, 0);
         int width = 0;
         int height = 0;
         if (!gst_structure_get_int(structure, "width", &width) ||
-            !gst_structure_get_int(structure, "height", &height))
-        {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Received sample without width/height");
+            !gst_structure_get_int(structure, "height", &height)) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Received sample without width/height");
             return;
         }
 
-        GstBuffer* buffer = gst_sample_get_buffer(sample);
-        if (buffer == nullptr)
-        {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Received sample without buffer");
+        GstBuffer *buffer = gst_sample_get_buffer(sample);
+        if (buffer == nullptr) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Received sample without buffer");
             return;
         }
 
         GstVideoInfo video_info;
-        if (!gst_video_info_from_caps(&video_info, caps))
-        {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Failed to parse video info from caps");
+        if (!gst_video_info_from_caps(&video_info, caps)) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Failed to parse video info from caps");
             return;
         }
 
-        if (GST_VIDEO_INFO_N_PLANES(&video_info) < 1)
-        {
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Unexpected video planes in sample");
+        if (GST_VIDEO_INFO_N_PLANES(&video_info) < 1) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Unexpected video planes in sample");
             return;
         }
 
         GstMapInfo map_info;
-        if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ))
-        {
+        if (!gst_buffer_map(buffer, &map_info, GST_MAP_READ)) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Failed to map sample buffer");
             return;
         }
 
         const int stride = GST_VIDEO_INFO_PLANE_STRIDE(&video_info, 0);
-        if (stride <= 0)
-        {
+        if (stride <= 0) {
             gst_buffer_unmap(buffer, &map_info);
-            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "Invalid video stride in sample");
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Invalid video stride in sample");
             return;
         }
 
@@ -279,11 +254,9 @@ private:
 
     void bridge_loop()
     {
-        while (rclcpp::ok() && running_.load())
-        {
-            GstSample* sample = gst_app_sink_try_pull_sample(appsink_, 200 * GST_MSECOND);
-            if (sample == nullptr)
-            {
+        while (rclcpp::ok() && running_.load()) {
+            GstSample *sample = gst_app_sink_try_pull_sample(appsink_, 200 * GST_MSECOND);
+            if (sample == nullptr) {
                 drain_bus();
                 continue;
             }
@@ -299,25 +272,22 @@ private:
     std::string frame_id_;
     std::string receiver_pipeline_;
 
-    GstElement* pipeline_ = nullptr;
-    GstAppSink* appsink_ = nullptr;
-    GstBus* bus_ = nullptr;
+    GstElement *pipeline_ = nullptr;
+    GstAppSink *appsink_ = nullptr;
+    GstBus *bus_ = nullptr;
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
     rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub_;
 };
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
 
-    try
-    {
+    try {
         auto node = std::make_shared<PiCameraBridgeNode>();
         rclcpp::spin(node);
-    }
-    catch (const std::exception& ex)
-    {
+    } catch (const std::exception &ex) {
         std::cerr << "Bridge node failed: " << ex.what() << std::endl;
         rclcpp::shutdown();
         return 1;

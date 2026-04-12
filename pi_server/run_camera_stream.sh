@@ -87,11 +87,32 @@ echo "Target : ${LAPTOP_IP}:${PORT}"
 echo "Mode   : ${PROFILE}"
 echo "Video  : ${WIDTH}x${HEIGHT} @ ${FPS}fps, bitrate=${BITRATE}"
 
-gst-launch-1.0 -e \
-  libcamerasrc ! \
-  video/x-raw,width=${WIDTH},height=${HEIGHT},framerate=${FPS}/1 ! \
-  queue ! \
-  v4l2h264enc extra-controls="controls,video_bitrate=${BITRATE}" ! \
-  h264parse config-interval=-1 ! \
-  rtph264pay pt=96 config-interval=1 ! \
-  udpsink host=${LAPTOP_IP} port=${PORT} sync=false async=false
+run_direct_pipeline() {
+  gst-launch-1.0 -e \
+    libcamerasrc ! \
+    video/x-raw,format=NV12,width=${WIDTH},height=${HEIGHT},framerate=${FPS}/1 ! \
+    queue ! \
+    v4l2h264enc extra-controls="controls,video_bitrate=${BITRATE}" ! \
+    h264parse config-interval=-1 ! \
+    rtph264pay pt=96 config-interval=1 ! \
+    udpsink host=${LAPTOP_IP} port=${PORT} sync=false async=false
+}
+
+run_convert_pipeline() {
+  gst-launch-1.0 -e \
+    libcamerasrc ! \
+    video/x-raw,width=${WIDTH},height=${HEIGHT},framerate=${FPS}/1 ! \
+    queue ! \
+    videoconvert ! \
+    video/x-raw,format=NV12 ! \
+    queue ! \
+    v4l2h264enc extra-controls="controls,video_bitrate=${BITRATE}" ! \
+    h264parse config-interval=-1 ! \
+    rtph264pay pt=96 config-interval=1 ! \
+    udpsink host=${LAPTOP_IP} port=${PORT} sync=false async=false
+}
+
+if ! run_direct_pipeline; then
+  echo "Direct NV12 pipeline failed. Retrying with videoconvert fallback..."
+  run_convert_pipeline
+fi
