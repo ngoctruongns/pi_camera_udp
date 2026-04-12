@@ -1,0 +1,24 @@
+[Unit]
+Description=Pi Camera UDP Stream
+# Wait for network to be fully up before starting
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+# Edit LAPTOP_IP to match your laptop's IP address
+Environment="LAPTOP_IP=192.168.10.37"
+Environment="PORT=5000"
+Environment="PROFILE=balanced"
+ExecStart=/home/pi/code_ws/pi_camera_udp/pi_server/run_camera_stream.sh ${LAPTOP_IP} ${PORT} ${PROFILE}
+# Restart automatically if it crashes (e.g. camera not ready yet at boot)
+Restart=on-failure
+RestartSec=3s
+# Give libcamera time to initialise before declaring failure
+TimeoutStartSec=15s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

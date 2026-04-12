@@ -1,84 +1,127 @@
-# Pi Camera UDP to ROS2 Bridge
+# Pi Camera UDP → ROS2 Bridge
 
-Minimal setup to stream Raspberry Pi camera over RTP/UDP and publish ROS2 image topics on laptop.
+Stream Raspberry Pi camera over raw H.264/UDP and publish as ROS2 image topics on a laptop.
 
 ## Architecture
 
-- Pi (Raspberry Pi OS): `libcamerasrc` -> `v4l2h264enc` -> RTP/UDP
-- Laptop (ROS2): RTP/UDP -> GStreamer decode -> `/camera/image_raw`, `/camera/camera_info`
-
-## 1) Raspberry Pi OS (Sender)
-
-Install dependencies:
-
-```bash
-sudo apt update
-sudo apt install -y gstreamer1.0-tools \
-  gstreamer1.0-plugins-base \
-  gstreamer1.0-plugins-good \
-  gstreamer1.0-plugins-bad \
-  gstreamer1.0-libav \
-  gstreamer1.0-libcamera
+```
+Raspberry Pi                       Laptop (ROS2 Humble)
+────────────────────────────────   ─────────────────────────────────────────
+libcamera-vid                      ros2_pi_camera_bridge_node (C++)
+  └─ raw H.264/UDP  ──────────►      └─ GStreamer (avdec_h264)
+                                       └─ /camera/image_raw (sensor_msgs/Image)
+                                                    │
+                                             RViz2 Image display
 ```
 
-Run sender:
+## Requirements
+
+### Raspberry Pi (sender)
+- `libcamera-apps` (`libcamera-vid`)
 
 ```bash
-cd /home/tvn/ros2_ws/src/pi_camera_udp/pi_server
+sudo apt install libcamera-apps
+```
+
+### Laptop (receiver)
+
+```bash
+sudo apt install \
+  ros-humble-cv-bridge \
+  libopencv-dev \
+  libgstreamer1.0-dev \
+  libgstreamer-plugins-base1.0-dev \
+  gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad \
+  gstreamer1.0-libav
+```
+
+## Build
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select ros2_pi_camera_bridge
+source install/setup.bash
+```
+
+## Usage
+
+### 1 — Start stream on Raspberry Pi
+
+```bash
+cd ~/code_ws/pi_camera_udp/pi_server
 ./run_camera_stream.sh <laptop_ip>
 ```
 
-Profile mode:
+**Profiles** (optional):
+
+| Profile    | Resolution | FPS | Bitrate  |
+|------------|-----------|-----|----------|
+| `low`      | 640×480   | 20  | 1.2 Mbps |
+| `balanced` | 848×480   | 20  | 1.8 Mbps |
+| `high`     | 1280×720  | 25  | 3.0 Mbps |
 
 ```bash
-./run_camera_stream.sh 192.168.1.10 5000 low
-./run_camera_stream.sh 192.168.1.10 5000 balanced
-./run_camera_stream.sh 192.168.1.10 5000 high
+./run_camera_stream.sh 192.168.10.37 5000 low
+./run_camera_stream.sh 192.168.10.37 5000 balanced   # default
+./run_camera_stream.sh 192.168.10.37 5000 high
 ```
 
-Manual mode:
+**Manual** (width height fps bitrate):
 
 ```bash
-./run_camera_stream.sh 192.168.1.10 5000 848 480 20 1800000
+./run_camera_stream.sh 192.168.10.37 5000 1280 720 30 3000000
 ```
 
-Recommended for diff-drive robot: `balanced`.
+### 2 — Autostart stream on Pi boot (optional)
 
-## 2) Laptop ROS2 Bridge
-
-Install dependencies:
+Run once on the Pi to install a systemd service that starts the stream automatically on every boot:
 
 ```bash
-sudo apt update
-sudo apt install -y ros-humble-cv-bridge libopencv-dev pkg-config \
-  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-  gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
+cd ~/code_ws/pi_camera_udp/pi_server
+./install_service.sh <laptop_ip> [port] [profile]
 ```
 
-Build:
+Example:
 
 ```bash
-cd /home/tvn/ros2_ws
-colcon build --packages-select ros2_pi_camera_bridge
+./install_service.sh 192.168.10.37              # balanced, port 5000
+./install_service.sh 192.168.10.37 5000 high    # high profile
 ```
 
-Run:
+Running `install_service.sh` again with different arguments **overwrites** the previous config and restarts the service immediately — no manual cleanup needed.
+
+Manage the service:
 
 ```bash
-source /home/tvn/ros2_ws/install/setup.bash
-ros2 run ros2_pi_camera_bridge ros2_pi_camera_bridge_node --ros-args -p udp_port:=5000
+sudo systemctl status  pi-camera-stream    # check status
+sudo systemctl stop    pi-camera-stream    # stop
+sudo systemctl start   pi-camera-stream    # start
+sudo systemctl disable pi-camera-stream    # remove from autostart
+journalctl -u pi-camera-stream -f          # live logs
 ```
 
-## 3) Verify Topics
+### 3 — Launch bridge + RViz on Laptop
 
 ```bash
-ros2 topic list | grep camera
+source ~/ros2_ws/install/setup.bash
+ros2 launch ros2_pi_camera_bridge camera_stream.launch.py
+```
+
+Override port if needed:
+
+```bash
+ros2 launch ros2_pi_camera_bridge camera_stream.launch.py port:=5001
+```
+
+### 3 — Verify
+
+```bash
 ros2 topic hz /camera/image_raw
-ros2 topic echo /camera/camera_info --once
 ```
 
-Notes:
+## Notes
 
-- Pi and laptop must use the same UDP port.
-- Always pass laptop IP when running sender.
-- If encoder plugin differs on your Pi image, edit pipeline in `pi_server/run_camera_stream.sh`.
+- Pi and laptop must be on the same network and use the same UDP port.
+- Always pass the **laptop IP** (not Pi IP) to the sender script.
+- If `avdec_h264` is missing, install `gstreamer1.0-libav`.

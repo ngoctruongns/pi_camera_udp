@@ -49,4 +49,8 @@ install(TARGETS ros2_pi_camera_bridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(DIRECTORY launch rviz
+  DESTINATION share/${PROJECT_NAME}
+)
+
 ament_package()
